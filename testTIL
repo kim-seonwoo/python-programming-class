@@ -1,0 +1,282 @@
+# 리액트를 다루는 기술 18장
+
+## 리덕스 미들웨어를 통한 비동기 작업 관리
+
+목표: 리덕스를 통하여 api를 받아올때 여러가지 상태를 표시하는 것
+
+- 리덕스 미들웨어는 액션을 디스패치 했을 때, 리듀서에 앞서 중간자로 작업을 처리한다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/508b5527-a113-4484-a130-9259c3450bea/Untitled.png)
+
+- 미들 웨어를 직접만들어 사용하는 경우는 흔하지 않음.
+
+```jsx
+const loggerMiddleware = (store) => (next) => (action) => {
+  //미들웨어 기본구조;
+  //화살표 함수를 연속적으로 사용.
+};
+
+export default loggerMiddleware;
+```
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/818ae73d-0191-4d6e-9fe9-3bf46f54249d/Untitled.png)
+
+store: 리덕스 스토어 인스턴스
+
+next: 함수형태이며, store.dispatch와 유사한 역할. next(action)을 호출하면, 그다음 처리해야할 미들웨어에 액션을 넘겨주고 미들웨어가 없다면 리듀서에게 액션을 넘겨준다.
+
+action: 디스패치된 액션
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/f1db834e-3a53-4d41-8e25-4cf8df5243be/Untitled.png)
+
+### 
+
+```jsx
+const loggerMiddleware = (store) => (next) => (action) => {
+  //미들웨어 기본구조;
+  //화살표 함수를 연달아 사용.
+
+  console.group(action && action.type); //액션 타입으로 log를 그룹화함
+  console.log("이전 상태", store.getState());
+  console.log("액션", action);
+  next(action); //다음 미들웨어 혹은 리듀서에게 전달
+  console.log("다음 상태", store.getState()); //업데이트 된 상태
+  console.groupEnd(); //그룹 끝
+};
+
+export default loggerMiddleware;
+```
+
+index.js에  미들웨어 적용
+
+`const store = createStore(rootReducer, applyMiddleware(loggerMiddleware));`
+
+### 미들웨어 사용 예시:
+
+### redux-logger 이용하기
+
+- yarn add redux-logger
+- (미들웨어)
+
+아래와 같은 형식으로 index.js를 수정해준다.
+
+```jsx
+**const logger = createLogger()**;
+const store = createStore(rootReducer, applyMiddleware(**logger**));
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(
+  <Provider store={store}>
+    <App />
+  </Provider>
+);
+```
+
+이전과 비슷하게 상태를 콘솔에 찍어준다.
+
+### 비동기 상태를 처리할 때 도움을 주는 미들웨어들
+
+- **redux-thunk:** **비동기 작업**을 처리할 때 가장 많이 사용하는 미들웨어. **객체가 아닌 함수** 형태의 **액션**을 **디스패치** 하게 해줌.
+- **redux-saga:** 특정 액션이 디스패치되었을 때 정해진 로직에 따라 다른 액션을 디스패치시키는 **규칙을 작성하여 비동기 작업**을 처리할 수 있게 해 줍니다.
+
+### redux-thunk
+
+**thunk:** 특정 작업을 나중에 하려고 미루기 위해 함수로 감싼 것.
+
+Redux는 기본적으로 액션객체만을 디스패치할 수 있습니다. 하지만 Redux Thunk를 활용하면 객체 대신 함수를 생성하는 액션 생성함수를 작성할 수 있게 해줍니다. 이러한 동작방식을 활용하여 Redux에서 비동기적인 프로그래밍을 구현할 수 있습니다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/c35634e8-506c-42a6-ad36-c589ee99e6b5/Untitled.png)
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/b8d03cb0-c268-4fd7-b45d-1887d4b280fb/Untitled.png)
+
+```jsx
+export const increaseAsync = () => dispatch => {
+  setTimeout(()=>{
+    dispatch(increase())
+  },1000)
+}
+```
+
+```jsx
+import { handleActions } from "redux-actions";
+import * as api from "../lib/api";
+import createRequestThunk from "../lib/createRequestThunk";
+
+// 액션타입을 선언
+// 한 요청당 세개를 만들어야한다.
+const GET_POST = "sample/GET_POST";
+const GET_POST_SUCCESS = "sample/GET_POST_SUCCESS";
+const GET_POST_FAILURE = "sample/GET_POST_FAILURE";
+
+const GET_USERS = "sample/GET_USERS";
+const GET_USERS_SUCCESS = "sample/GET_USERS_SUCCESS";
+const GET_USERS_FAILURE = "sample/GET_USERS_FAILURE";
+
+// thunk 함수를 생성한다.
+// thunk 함수 내부에서 시작할 때, 성공했을 때, 실패했을 때 다른 액션을 디스패치한다.
+
+export const getPost = (id) => async (dispatch) => {
+  dispatch({ type: GET_POST }); // 요청시작 알림
+  try {
+    const response = await api.getPost(id);
+    dispatch({
+      type: GET_POST_SUCCESS,
+      payload: response.data,
+    }); // 요청 성공
+  } catch (e) {
+    dispatch({
+      type: GET_POST_FAILURE,
+      payload: e,
+      error: true,
+    }); // 에러발생
+    throw e;
+  }
+};
+
+export const getUsers = () => async (dispatch) => {
+  dispatch({ type: GET_USERS }); //요청 시작을 알림
+  try { 
+    const response = await api.getUsers();
+    dispatch({
+      type: GET_USERS_SUCCESS,
+      payload: response.data,
+    }); // 요청 성공
+  } catch (e) {
+    dispatch({
+      type: GET_USERS_FAILURE,
+      payload: e,
+      error: true,
+    });
+    throw e;
+  }
+};
+
+// 초기상태 선언
+// 요청 로딩 중 상태는 loading이라는 객체에서 관리
+const initialState = {
+  loading: {
+    GET_POST: false,
+    GET_USERS: false,
+  },
+  post: null,
+  users: null,
+};
+
+const sample = handleActions(
+  {
+    [GET_POST]: (state) => ({
+      ...state,
+      loading: {
+        ...state.loading,
+        GET_POST: true, // 요청 시작
+      },
+    }),
+    [GET_POST_SUCCESS]: (state, action) => ({
+      ...state,
+      loading: {
+        ...state.loading,
+        GET_POST: false, // 요청 완료
+      },
+      post: action.payload,
+    }),
+    [GET_POST_FAILURE]: (state, action) => ({
+      ...state,
+      loading: {
+        ...state.loading,
+        GET_POST: false, // 요청 완료
+      },
+    }),
+    [GET_USERS]: (state) => ({
+      ...state,
+      loading: {
+        ...state.loading,
+        GET_USERS: true, // 요청 시작
+      },
+    }),
+    [GET_USERS_SUCCESS]: (state, action) => ({
+      ...state,
+      loading: {
+        ...state.loading,
+        GET_USERS: false, // 요청 완료
+      },
+      users: action.payload,
+    }),
+    [GET_USERS_FAILURE]: (state, action) => ({
+      ...state,
+      loading: {
+        ...state.loading,
+        GET_USERS: false, // 요청 완료
+      },
+    }),
+  },
+  initialState
+);
+
+export default sample;
+```
+
+```jsx
+import { handleActions } from "redux-actions";
+import * as api from "../lib/api";
+import createRequestThunk from "../lib/createRequestThunk";
+
+const GET_POST = "sample/GET_POST";
+const GET_POST_SUCCESS = "sample/GET_POST_SUCCESS";
+
+const GET_USERS = "sample/GET_USERS";
+const GET_USERS_SUCCESS = "sample/GET_USERS_SUCCESS";
+
+**export const getPost = createRequestThunk(GET_POST, api.getPost);
+export const getUsers = createRequestThunk(GET_USERS, api.getUsers);**
+
+const initialState = {
+  post: null,
+  users: null,
+};
+
+const sample = handleActions(
+  {
+    [GET_POST_SUCCESS]: (state, action) => ({
+      ...state,
+      post: action.payload,
+    }),
+    [GET_USERS_SUCCESS]: (state, action) => ({
+      ...state,
+      users: action.payload,
+    }),
+  },
+  initialState
+);
+
+export default sample;
+```
+
+### redux-saga
+
+ Redux Saga :  Redux Thunk가 함수를 디스패치 할 수 있게 해주는 미들웨어였다면, Saga는 액션을 모니터링 하고 있다가 특정 액션이 발생했을 때, 미리 정해둔 로직에 따라 특정 작업이 이루어지는 방식으로 이루어짐.
+
+ 또한 Sagas라는 순수함수들로 로직을 처리할 수 있는데, 순수함수로 이루어지다보니, 사이드 이펙트도 적고 테스트 코드를 작성하기에도 용이.
+
+Redux Saga는 그 특성상 Thunk에 비해 많은 기능을 수행할 수 있습니다.
+
+예를 들면,
+
+- 비동기 작업 진행시, 기존 요청 취소
+- 특정 액션이 발생했을 때, 이를 구독하고 있다가 다른 액션을 디스패치 하거나 특정 자바스크립트 코드를 실행함
+- 웹소켓 사용시, 더 효율적인 코드 관리
+- API요청 실패시 재요청 가능
+
+등의 기능이 있음.
+
+### 제너레이터
+
+- generator 함수는 function*와 같은 형태를 통해서 생성합니다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/d0c9fa73-7802-4d26-89fb-f6ffd6ce8882/Untitled.png)
+
+제너레이터를 호출해줍니다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/cbe43fc3-2e81-4833-86dd-21769c7b311d/Untitled.png)
+
+제너레이터를 불러올때 next()를 통하여 다음 yield값 까지만
+
+함수를 실행합니다.
